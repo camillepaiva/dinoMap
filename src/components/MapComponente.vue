@@ -30,6 +30,15 @@
           <label class="checkbox-container">
             <input
               type="checkbox"
+              v-model="layers.geologia_brasil"
+              @change="toggleLayer('geologia_brasil')"
+            />
+            <span></span> Geologia
+          </label>
+
+          <label class="checkbox-container">
+            <input
+              type="checkbox"
               v-model="layers.fosseis"
               @change="toggleLayer('fosseis')"
             />
@@ -48,18 +57,23 @@
       </div>
     </div>
     <div id="map" class="map-container"></div>
+    <div id="info-card" class="info-card">
+      <h2>Informações da camada</h2>
+      <div id="info-content">Clique no mapa para ver os dados.</div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive } from "vue";
-import L from "leaflet";
+import { initMapa } from "../Utils/initMapa.js";
 import "leaflet/dist/leaflet.css";
 
 let map;
 const camadaRefs = {
   uf: null,
   lim_mun: null,
+  geologia_brasil:null,
   fosseis: null,
   museus: null,
 };
@@ -67,6 +81,7 @@ const camadaRefs = {
 const layers = reactive({
   uf: true,
   lim_mun: true,
+  geologia_brasil: true,
   fosseis: true,
   museus: true,
 });
@@ -77,135 +92,25 @@ const toggleLayer = (layerName) => {
 
   if (layers[layerName]) {
     map.addLayer(layer);
-    switch (layerName) {
-      case "uf":
-        layer.setZIndex(100);
-        break;
-      case "lim_mun":
-        layer.setZIndex(200);
-        break;
-      case "fosseis":
-        layer.setZIndex(300);
-        break;
-      case "museus":
-        layer.setZIndex(400);
-        break;
-    }
+    layer.setZIndex(
+      {
+        uf: 100,
+        lim_mun: 200,
+        fosseis: 300,
+        museus: 400,
+      }[layerName]
+    );
   } else {
     map.removeLayer(layer);
   }
 };
 
 onMounted(() => {
-    map = L.map("map", {
-      center: [-15.8, -47.9],
-      zoom: 4,
-      minZoom: 3,
-      maxZoom: 12
-    });
-
-  // Mapa base
-  L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {
-      attribution: "Tiles &copy; Esri",
-    }
-  ).addTo(map);
-
-  // Camadas WMS
-  camadaRefs.uf = L.tileLayer
-    .wms("http://localhost:8080/geoserver/projeto_fosseis_br/wms", {
-      layers: "projeto_fosseis_br:uf",
-      format: "image/png",
-      transparent: true,
-      version: "1.1.1",
-    })
-    .addTo(map)
-    .setZIndex(100);
-
-  //Limites Municipal do Brasil
-  camadaRefs.lim_mun = L.tileLayer
-    .wms("http://localhost:8080/geoserver/projeto_fosseis_br/wms", {
-      layers: "projeto_fosseis_br:limite_muni",
-      format: "image/png",
-      transparent: true,
-      version: "1.1.1",
-    })
-    .addTo(map)
-    .setZIndex(200);
-
-  camadaRefs.fosseis = L.tileLayer
-    .wms("http://localhost:8080/geoserver/projeto_fosseis_br/wms", {
-      layers: "projeto_fosseis_br:fosseis_br",
-      format: "image/png",
-      transparent: true,
-      version: "1.1.1",
-    })
-    .addTo(map)
-    .setZIndex(300);
-
-  camadaRefs.museus = L.tileLayer
-    .wms("http://localhost:8080/geoserver/projeto_fosseis_br/wms", {
-      layers: "projeto_fosseis_br:museus_centrospesq",
-      format: "image/png",
-      transparent: true,
-      version: "1.1.1",
-    })
-    .addTo(map)
-    .setZIndex(400);
-
-  map.on("click", function (e) {
-    // Coordenadas do clique
-    const latlng = e.latlng;
-
-    // Usa camada que quer consultar, por exemplo camadaRefs.fosseis
-    const wmsLayer = camadaRefs.fosseis;
-
-    // Monta a URL do GetFeatureInfo
-    const url = getFeatureInfoUrl(wmsLayer, latlng);
-
-    // Faz o fetch para pegar as informações
-    fetch(url)
-      .then((response) => response.text())
-      .then((data) => {
-        // Mostra resultado num popup
-        L.popup().setLatLng(latlng).setContent(data).openOn(map);
-      })
-      .catch((err) => console.error(err));
-  });
-
-  // Função que cria a URL do GetFeatureInfo
-  function getFeatureInfoUrl(layer, latlng) {
-    const point = map.latLngToContainerPoint(latlng, map.getZoom());
-    const size = map.getSize();
-
-    const baseUrl = layer._url; // URL base do WMS (ex: http://localhost:8080/geoserver/projeto_fosseis_br/wms)
-    const params = {
-      request: "GetFeatureInfo",
-      service: "WMS",
-      srs: "EPSG:4326", // ou 'EPSG:3857' dependendo do seu mapa e camada
-      styles: "",
-      transparent: true,
-      version: "1.1.1",
-      format: "image/png",
-      bbox: map.getBounds().toBBoxString(),
-      height: size.y,
-      width: size.x,
-      layers: layer.wmsParams.layers,
-      query_layers: layer.wmsParams.layers,
-      info_format: "text/html", // pode ser text/plain, application/json, etc
-      feature_count: 5,
-      x: Math.floor(point.x),
-      y: Math.floor(point.y),
-    };
-
-    const queryString = new URLSearchParams(params).toString();
-    return baseUrl + "?" + queryString;
-  }
+  map = initMapa("map", camadaRefs, layers);
 });
 </script>
 
-<style scoped>
+<style>
 .map-container {
   height: 100vh;
   width: 100%;
@@ -219,11 +124,11 @@ onMounted(() => {
   z-index: 1000;
   color: rgb(213, 153, 0);
   text-shadow: 2px 2px 4px black;
-  font-family: 'Segoe UI', sans-serif;
+  font-family: "Segoe UI", sans-serif;
   background-color: rgba(0, 0, 0, 0.5);
   padding: 12px 24px;
   border-radius: 12px;
-  border: 2px solid #3C8C59;
+  border: 2px solid #3c8c59;
 }
 .titulo-principal h1 {
   margin: 0;
@@ -240,7 +145,7 @@ onMounted(() => {
   top: 15%;
   left: 2%;
   z-index: 1000;
-  height: 220px;
+  height: 250px;
   width: 300px;
   background: url("../assets/fundoMenu.png") center/cover no-repeat;
   border: 2px solid #3c8c59;
@@ -282,14 +187,12 @@ onMounted(() => {
   cursor: pointer;
 }
 
-/* Oculta o checkbox padrão */
 .checkbox-container input[type="checkbox"] {
   position: absolute;
   opacity: 0;
   cursor: pointer;
 }
 
-/* Cria caixa customizada */
 .checkbox-container::before {
   content: "";
   position: absolute;
@@ -303,13 +206,11 @@ onMounted(() => {
   transition: all 0.2s ease;
 }
 
-/* Marcado */
 .checkbox-container input[type="checkbox"]:checked + span::before {
   background-color: #3c8c59;
   border-color: #3c8c59;
 }
 
-/* Ícone de check */
 .checkbox-container input[type="checkbox"]:checked + span::after {
   content: "";
   position: absolute;
@@ -320,5 +221,102 @@ onMounted(() => {
   border: solid white;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+}
+.info-card {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  width: 360px;
+  max-height: 500px; 
+  overflow-y: auto;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 2px solid #3c8c59;
+  border-radius: 20px;
+  padding: 28px 32px;
+  font-family: "Montserrat", sans-serif;
+  color: #f1e6d0;
+  font-size: 13px;
+  z-index: 9999;
+  user-select: none;
+  transition: transform 0.3s ease;
+}
+
+.info-card h2 {
+  margin-top: 0;
+  margin-bottom: 22px;
+  font-weight: 900;
+  font-size: 24px;
+  letter-spacing: 1.3px;
+  color: #3c8c59; 
+  text-shadow: 0 2px 5px rgba(95, 47, 0, 0.8);
+  border-bottom: 3px solid #3c8c59;
+  padding-bottom: 8px;
+}
+
+.popup-card {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 26px;
+  align-items: center;
+  padding: 14px 18px;
+  box-shadow: inset 0 0 18px rgba(216, 126, 31, 0.3);
+  transition: background 0.25s ease;
+}
+
+.popup-img img {
+  width: 90px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid #3c8c59;
+  filter: drop-shadow(0 0 6px #3c8c59);
+}
+.popup-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.popup-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  word-break: break-word; 
+}
+
+.popup-key {
+  color: #d87e1f;
+  font-size: 13px;
+  text-transform: uppercase;
+  text-shadow: 0 1.5px 2.5px rgba(30, 17, 0, 0.5);
+  min-width: 120px;
+  white-space: normal;
+}
+
+.popup-value {
+  color: #f1e6d0;
+  font-size: 13px;
+  max-width: 180px;
+  text-align: right;
+  white-space: normal;    
+  overflow-wrap: break-word;
+  font-weight: 600;
+  font-style: italic;
+  flex: 1;
+}
+
+.info-card::-webkit-scrollbar {
+  width: 10px;
+}
+.info-card::-webkit-scrollbar-thumb {
+  background: #d87e1f;
+  border-radius: 15px;
+}
+.info-card::-webkit-scrollbar-track {
+  background: rgba(50, 75, 38, 0.15);
 }
 </style>
